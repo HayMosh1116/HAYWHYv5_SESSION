@@ -32,7 +32,7 @@ function rateLimit(req, res, next) {
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
   const previous = requestsByIp.get(ip);
   if (previous && now - previous.startedAt < REQUEST_WINDOW_MS && previous.count >= MAX_REQUESTS_PER_WINDOW) {
-    return res.status(429).json({ error: 'Too many pairing attempts. Try again in 10 minutes.' });
+    return res.status(429).json({ error: 'Too many pairing attempts. Try again in 2 minutes.' });
   }
   if (!previous || now - previous.startedAt >= REQUEST_WINDOW_MS) requestsByIp.set(ip, { startedAt: now, count: 1 });
   else previous.count += 1;
@@ -226,6 +226,7 @@ app.get('/api/sessions/:id', (req, res) => {
 });
 
 app.get('/', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
   res.type('html').send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HAYWHY MDX v5 Session</title>
 <style>
@@ -233,21 +234,58 @@ body{margin:0;background:#090909;color:#f4f4f4;font:16px Arial,sans-serif;displa
 main{width:min(100%,440px);background:#151515;border:1px solid #333;border-radius:18px;padding:24px;box-sizing:border-box}
 h1{margin-top:0}p{color:#bbb;line-height:1.5}label{display:block;margin:18px 0 8px}
 input,button{width:100%;box-sizing:border-box;padding:14px;border-radius:10px;border:1px solid #555;font-size:16px}
-input{background:#090909;color:white}button{margin-top:12px;background:#7b4acb;color:white;border:0;font-weight:bold}
-#result{margin-top:18px;overflow-wrap:anywhere}#qr{display:block;width:min(100%,280px);margin:16px auto;background:white;padding:8px;border-radius:12px}
+input{background:#090909;color:white}button{margin-top:12px;background:#7b4acb;color:white;border:0;font-weight:bold;cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.55;cursor:wait}
+#copy{background:#292039;border:1px solid #8c62c9}
+#result{margin-top:18px;overflow-wrap:anywhere;white-space:pre-wrap;line-height:1.5}
+#qr{display:block;width:min(100%,280px);margin:16px auto;background:white;padding:8px;border-radius:12px}
 code{color:#c8a7ff}
 </style></head><body><main><h1>HAYWHY MDX v5</h1>
 <label for="number">WhatsApp number with country code</label><input id="number" inputmode="numeric" placeholder="2348012345678">
 <button id="pair">Get pairing code</button><button id="qrbtn">Use QR code</button><div id="result" aria-live="polite"></div><img id="qr" hidden alt="WhatsApp QR code">
 <script>
 const result=document.getElementById('result'), qr=document.getElementById('qr');
-let poller;
-async function begin(path,body){clearInterval(poller);result.textContent='Starting secure connection…';qr.hidden=true;
-try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not start');show(d);if(d.sessionId)poller=setInterval(async()=>{try{const x=await fetch('/api/sessions/'+encodeURIComponent(d.sessionId));if(!x.ok)return;show(await x.json())}catch(e){}},2000)}
-catch(e){result.textContent=e.message}}
-function show(d){const code=d.pairingCode?'\n\nPAIRING CODE: '+d.pairingCode:'';result.textContent=(d.message||d.status||'')+code;if(d.qr){qr.src=d.qr;qr.hidden=false}}
-document.getElementById('pair').onclick=()=>begin('/api/pair',{number:document.getElementById('number').value});
-document.getElementById('qrbtn').onclick=()=>begin('/api/qr',{});
+const pairButton=document.getElementById('pair'), qrButton=document.getElementById('qrbtn');
+let poller=null, busy=false;
+function setBusy(value){busy=value;pairButton.disabled=value;qrButton.disabled=value;pairButton.textContent=value?'Please wait…':'Get pairing code';qrButton.textContent=value?'Please wait…':'Use QR code'}
+function stopPolling(){if(poller){clearInterval(poller);poller=null}}
+async function copyPairingCode(code,button){
+  try{
+    if(navigator.clipboard && window.isSecureContext){await navigator.clipboard.writeText(code)}
+    else{
+      const field=document.createElement('textarea');field.value=code;field.style.position='fixed';field.style.opacity='0';document.body.appendChild(field);field.select();
+      const copied=document.execCommand('copy');field.remove();if(!copied)throw new Error('Copy not available');
+    }
+    button.textContent='Copied!';
+  }catch(_){button.textContent='Copy failed — select the code above';}
+}
+function show(d){
+  const code=d.pairingCode||'';
+  result.textContent=(d.message||d.status||'')+(code?'\n\nPAIRING CODE: '+code:'');
+  const oldCopy=document.getElementById('copy');if(oldCopy)oldCopy.remove();
+  if(code){
+    const copy=document.createElement('button');copy.id='copy';copy.type='button';copy.textContent='Copy pairing code';
+    copy.addEventListener('click',()=>copyPairingCode(code.replace(/-/g,''),copy));result.appendChild(copy);
+  }
+  if(d.qr){qr.src=d.qr;qr.hidden=false}else if(d.mode==='pairing'){qr.hidden=true}
+  if(['saved','expired','error','disconnected'].includes(d.status))stopPolling();
+}
+async function begin(path,body){
+  if(busy)return;
+  stopPolling();setBusy(true);result.textContent='Starting secure connection…';qr.hidden=true;qr.removeAttribute('src');
+  const oldCopy=document.getElementById('copy');if(oldCopy)oldCopy.remove();
+  try{
+    const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not start');
+    show(d);
+    if(d.sessionId)poller=setInterval(async()=>{
+      try{const x=await fetch('/api/sessions/'+encodeURIComponent(d.sessionId),{cache:'no-store'});if(!x.ok){stopPolling();return}show(await x.json())}catch(_){}
+    },2000);
+  }catch(e){result.textContent=e.message||'Something went wrong. Please try again.'}
+  finally{setBusy(false)}
+}
+pairButton.addEventListener('click',()=>begin('/api/pair',{number:document.getElementById('number').value}));
+qrButton.addEventListener('click',()=>begin('/api/qr',{}));
 </script></main></body></html>`);
 });
 
