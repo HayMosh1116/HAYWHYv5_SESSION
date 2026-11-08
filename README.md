@@ -1,23 +1,47 @@
-# HAYWHY MDX v5 Session Generator
+# HAYWHY MDX v5 — Session Service
 
-Companion session-generation workspace for HAYWHY MDX v5.
+Separate session-service workspace for **HAYWHY MDX**. The original session-generator repository remains untouched.
 
-## Contract
+## Current status
 
-The generator must create a complete authentication state compatible with the exact pinned `prince-baileys` version used by the bot. A credentials-only JSON export is not a complete session: Signal keys are required too.
+This repository is a migration workspace, not yet a completed MongoDB session generator. The legacy generator currently uses `@whiskeysockets/baileys` and exports a compressed `PRINCE-MDX!` session string. The bot repository uses a pinned `prince-baileys` fork.
 
-## Recommended flow
+Those formats must not be assumed interchangeable. The session service must use the same pinned `prince-baileys` revision as the bot and persist the complete AuthenticationState (credentials plus Signal keys) to the same MongoDB database/collection.
 
-1. Pair the WhatsApp linked device using the generator.
-2. Persist the generated credentials and all Signal key categories to the same MongoDB auth collection used by the bot, under a unique `WHATSAPP_SESSION_ID`.
-3. The bot loads that same namespace and writes every key update back to MongoDB.
-4. Protect the session with encryption at rest, least-privilege MongoDB credentials, and a single-active-owner lease.
-5. Never log, expose, or place session data in GitHub, URLs, browser local storage, or public API responses.
+## Target architecture
 
-## Environment
+- MongoDB collection: `whatsapp_auth`
+- Session namespace: `WHATSAPP_SESSION_ID`
+- Database: `MONGODB_DB`
+- Connection secret: `MONGODB_URI`
+- Auth format: the exact `prince-baileys` AuthenticationState used by HAYWHY MDX v5.
 
-- `MONGODB_URI`
-- `MONGODB_DB`
-- `WHATSAPP_SESSION_ID`
+The service should expose QR and pairing-code flows while keeping credentials and Signal keys in MongoDB. It should not send raw auth exports or long-lived private keys through chats, logs, URLs, or public endpoints.
 
-The generator should not export only `creds.json` or compress credentials while omitting Signal keys. The final implementation must use the same auth-store adapter contract as the bot.
+## Required environment variables
+
+| Variable | Purpose |
+|---|---|
+| `MONGODB_URI` | MongoDB Atlas connection string; configure as a secret |
+| `MONGODB_DB` | Database name, e.g. `haywhy_mdx` |
+| `WHATSAPP_SESSION_ID` | Stable session namespace for the account |
+| `PORT` | Optional web server port |
+
+## Safety rules
+
+1. Never commit MongoDB credentials, QR codes, pairing codes, or WhatsApp auth state.
+2. Do not run the same session ID from the session service and bot at the same time.
+3. Do not delete the existing working session during migration.
+4. Do not mark this service production-ready until a fresh pair, MongoDB persistence, restart recovery, and message send/receive tests pass.
+
+## Migration checklist
+
+- [ ] Copy the complete existing QR/pairing routes and UI into this repository.
+- [ ] Pin the exact same `prince-baileys` commit as the bot.
+- [ ] Replace compressed session-string export with MongoDB-backed auth-state persistence.
+- [ ] Verify the service and bot read the same session namespace.
+- [ ] Test QR and pairing code flows.
+- [ ] Verify restart recovery and message send/receive.
+- [ ] Ensure only one live socket owns a session ID.
+
+**Important:** The old repository is preserved. This repository documents the target architecture; its runtime migration and tests are still pending.
