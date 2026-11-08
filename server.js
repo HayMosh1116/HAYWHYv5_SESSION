@@ -50,6 +50,31 @@ function publicStatus(session) {
   };
 }
 
+async function fetchWhatsAppWebVersion() {
+  const response = await fetch('https://web.whatsapp.com/sw.js', {
+    method: 'GET',
+    headers: {
+      'sec-fetch-site': 'none',
+      'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    },
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!response.ok) {
+    throw new Error(`Could not fetch current WhatsApp Web version (HTTP ${response.status}). Try again later.`);
+  }
+  const script = await response.text();
+  const match = script.match(/\\?"client_revision\\?":\\s*(\\d+)/);
+  if (!match?.[1]) {
+    throw new Error('Could not read the current WhatsApp Web version. Try again later.');
+  }
+  const version = [2, 3000, Number(match[1])];
+  if (!Number.isSafeInteger(version[2]) || version[2] <= 0) {
+    throw new Error('WhatsApp returned an invalid Web version.');
+  }
+  console.log('[WHATSAPP WEB VERSION]', version.join('.'));
+  return version;
+}
+
 async function startSession(mode, phoneNumber) {
   for (const [id, old] of sessions) {
     if (old.closed && sessions.size > 100) sessions.delete(id);
@@ -75,7 +100,9 @@ async function startSession(mode, phoneNumber) {
     const { state, saveCreds } = await useMongoAuthState({
       collection, sessionId, baileys
     });
+    const version = await fetchWhatsAppWebVersion();
     const sock = makeWASocket({
+      version,
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, logger)
