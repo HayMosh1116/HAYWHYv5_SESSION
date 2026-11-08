@@ -245,7 +245,7 @@ let poller;
 async function begin(path,body){clearInterval(poller);result.textContent='Starting secure connection…';qr.hidden=true;
 try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not start');show(d);if(d.sessionId)poller=setInterval(async()=>{try{const x=await fetch('/api/sessions/'+encodeURIComponent(d.sessionId));if(!x.ok)return;show(await x.json())}catch(e){}},2000)}
 catch(e){result.textContent=e.message}}
-function show(d){const code=d.pairingCode?'\\n\\nPAIRING CODE: '+d.pairingCode:'';result.textContent=(d.message||d.status||'')+code;if(d.qr){qr.src=d.qr;qr.hidden=false}}
+function show(d){const code=d.pairingCode?'\n\nPAIRING CODE: '+d.pairingCode:'';result.textContent=(d.message||d.status||'')+code;if(d.qr){qr.src=d.qr;qr.hidden=false}}
 document.getElementById('pair').onclick=()=>begin('/api/pair',{number:document.getElementById('number').value});
 document.getElementById('qrbtn').onclick=()=>begin('/api/qr',{});
 </script></main></body></html>`);
