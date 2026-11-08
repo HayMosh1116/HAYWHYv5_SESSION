@@ -10,7 +10,8 @@ const {
   Browsers,
   delay,
   makeCacheableSignalKeyStore,
-  jidNormalizedUser
+  jidNormalizedUser,
+  fetchLatestWaWebVersion
 } = baileys;
 const { getMongoClient, getWhatsAppAuthCollection, closeMongoClient } = require('./lib/mongo-client');
 const { useMongoAuthState } = require('./lib/mongo-auth-state');
@@ -51,27 +52,25 @@ function publicStatus(session) {
 }
 
 async function fetchWhatsAppWebVersion() {
-  const response = await fetch('https://web.whatsapp.com/sw.js', {
-    method: 'GET',
+  // Use the pinned Baileys fork's version helper. It falls back to the
+  // version bundled with the installed package if WhatsApp rate-limits sw.js.
+  const result = await fetchLatestWaWebVersion({
+    timeout: 12000,
     headers: {
-      'sec-fetch-site': 'none',
       'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-    },
-    signal: AbortSignal.timeout(15000)
+    }
   });
-  if (!response.ok) {
-    throw new Error(`Could not fetch current WhatsApp Web version (HTTP ${response.status}). Try again later.`);
+
+  const version = result?.version;
+  if (!Array.isArray(version) || version.length !== 3 ||
+      !version.every(value => Number.isSafeInteger(value) && value > 0)) {
+    throw new Error('Could not determine a usable WhatsApp Web version from Baileys.');
   }
-  const script = await response.text();
-  const match = script.match(/\\?"client_revision\\?":\s*(\d+)/);
-  if (!match?.[1]) {
-    throw new Error('Could not read the current WhatsApp Web version. Try again later.');
+
+  console.log('[WHATSAPP WEB VERSION]', version.join('.'), result.isLatest ? '(latest)' : '(bundled fallback)');
+  if (result.error) {
+    console.warn('[WHATSAPP WEB VERSION FALLBACK]', result.error.message || result.error);
   }
-  const version = [2, 3000, Number(match[1])];
-  if (!Number.isSafeInteger(version[2]) || version[2] <= 0) {
-    throw new Error('WhatsApp returned an invalid Web version.');
-  }
-  console.log('[WHATSAPP WEB VERSION]', version.join('.'));
   return version;
 }
 
