@@ -180,6 +180,95 @@ async function startSession(mode, phoneNumber) {
           code: disconnectCode,
           message: disconnectMessage
         });
+
+        // WhatsApp uses 515 (restartRequired) during some pairing handshakes.
+        // Recreate the socket with the same MongoDB-backed auth state instead of
+        // treating this expected restart as a failed pairing attempt.
+        if (Number(disconnectCode) === 515 && !session.restartedAfter515) {
+          session.restartedAfter515 = true;
+          session.status = mode === 'pairing' ? 'waiting_pairing' : 'starting';
+          session.message = mode === 'pairing'
+            ? 'WhatsApp is restarting the connection. Keep the pairing code ready.'
+            : 'WhatsApp is restarting the connection. Preparing a fresh QR code.';
+          await delay(1000);
+          if (session.closed) return;
+
+          const replacement = makeWASocket({
+            version,
+            auth: {
+              creds: state.creds,
+              keys: makeCacheableSignalKeyStore(state.keys, logger)
+            },
+            logger,
+            browser: Browsers.macOS('Safari'),
+            printQRInTerminal: false,
+            syncFullHistory: false,
+            markOnlineOnConnect: false,
+            connectTimeoutMs: 60000,
+            keepAliveIntervalMs: 30000
+          });
+          session.socket = replacement;
+          replacement.ev.on('creds.update', update => {
+            saveCreds(update).catch(error => {
+              session.status = 'error';
+              session.message = 'Could not save WhatsApp credentials to MongoDB.';
+              console.error('[AUTH SAVE]', error.message);
+            });
+          });
+          replacement.ev.on('connection.update', async next => {
+            if (next.qr && mode === 'qr' && !session.closed) {
+              try {
+                session.qr = await QRCode.toDataURL(next.qr);
+                session.status = 'waiting_qr';
+                session.message = 'Scan this QR code with WhatsApp Linked Devices.';
+              } catch (error) {
+                session.status = 'error';
+                session.message = 'Could not render the QR code.';
+              }
+            }
+            if (next.connection === 'open' && !session.closed) {
+              session.status = 'connected';
+              session.message = 'WhatsApp connected. Saving the full authentication state.';
+              try {
+                await saveCreds();
+                await delay(1200);
+                const ownJid = replacement.user?.id ? jidNormalizedUser(replacement.user.id) : null;
+                if (ownJid) {
+                  await replacement.sendMessage(ownJid, {
+                    text: [
+                      '*HAYWHY MDX v5 — SESSION LINKED*',
+                      '',
+                      'Your full WhatsApp authentication state is saved securely in MongoDB.',
+                      '',
+                      '*Set this value in your bot host environment:*',
+                      `WHATSAPP_SESSION_ID=${sessionId}`,
+                      '',
+                      'Use the exact value above. Keep it private.'
+                    ].join('\\n')
+                  });
+                }
+                session.status = 'saved';
+                session.message = 'Authentication saved. The session ID was sent to your WhatsApp account.';
+              } catch (error) {
+                session.status = 'error';
+                session.message = 'WhatsApp connected, but final save/notification failed. Check service logs.';
+                console.error('[SESSION FINALIZE]', error.message);
+              } finally {
+                await closeSession(session);
+              }
+            }
+            if (next.connection === 'close' && !session.closed && session.status !== 'saved') {
+              const err = next.lastDisconnect?.error;
+              const code = err?.output?.statusCode || err?.statusCode || 'unknown';
+              console.error('[WHATSAPP RESTART SOCKET CLOSED]', { sessionId, code, message: err?.message });
+              session.status = 'disconnected';
+              session.message = `WhatsApp disconnected after restart (code: ${code}). Check Render logs.`;
+              await closeSession(session);
+            }
+          });
+          return;
+        }
+
         session.status = 'disconnected';
         session.message = `WhatsApp disconnected (code: ${disconnectCode}). Check the session service logs for the reason, then try again.`;
         await closeSession(session);
