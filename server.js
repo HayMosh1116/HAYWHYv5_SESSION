@@ -63,7 +63,7 @@ async function fetchWhatsAppWebVersion() {
     throw new Error(`Could not fetch current WhatsApp Web version (HTTP ${response.status}). Try again later.`);
   }
   const script = await response.text();
-  const match = script.match(/\\?"client_revision\\?":\\s*(\\d+)/);
+  const match = script.match(/\\?"client_revision\\?":\s*(\d+)/);
   if (!match?.[1]) {
     throw new Error('Could not read the current WhatsApp Web version. Try again later.');
   }
