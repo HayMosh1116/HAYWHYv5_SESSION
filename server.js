@@ -143,8 +143,18 @@ async function startSession(mode, phoneNumber) {
       }
 
       if (update.connection === 'close' && !session.closed && session.status !== 'saved') {
+        const disconnectError = update.lastDisconnect?.error;
+        const disconnectCode = disconnectError?.output?.statusCode || disconnectError?.statusCode || 'unknown';
+        const disconnectMessage = disconnectError?.message || 'No disconnect message supplied';
+        console.error('[WHATSAPP CONNECTION CLOSED]', {
+          sessionId: session.id,
+          mode: session.mode,
+          status: session.status,
+          code: disconnectCode,
+          message: disconnectMessage
+        });
         session.status = 'disconnected';
-        session.message = 'WhatsApp connection closed before setup finished. Start again.';
+        session.message = `WhatsApp disconnected (code: ${disconnectCode}). Check the session service logs for the reason, then try again.`;
         await closeSession(session);
       }
     });
