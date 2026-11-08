@@ -1,0 +1,17 @@
+{
+  "name": "haywhy-mdx-v5-session",
+  "version": "5.0.0",
+  "private": true,
+  "description": "MongoDB-backed WhatsApp pairing service for HAYWHY MDX v5",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": { "node": ">=22 <23" },
+  "scripts": { "start": "node server.js", "check": "node --check server.js && node --check lib/mongo-auth-state.js && node --check lib/mongo-client.js" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mongodb": "^6.8.0",
+    "pino": "^9.6.0",
+    "prince-baileys": "https://github.com/Mayelprince/Prince-bailey/archive/51904d2138d1db4bea4d5d66dd5fade76f508a85.tar.gz",
+    "qrcode": "^1.5.4"
+  }
+}

@@ -1,47 +1,45 @@
 # HAYWHY MDX v5 — Session Service
 
-Separate session-service workspace for **HAYWHY MDX**. The original session-generator repository remains untouched.
+A separate pairing/QR service for HAYWHY MDX v5. The original session-generator repository is not modified.
 
-## Current status
+## How it works
 
-This repository is a migration workspace, not yet a completed MongoDB session generator. The legacy generator currently uses `@whiskeysockets/baileys` and exports a compressed `PRINCE-MDX!` session string. The bot repository uses a pinned `prince-baileys` fork.
+1. Open the service URL.
+2. Choose pairing code or QR.
+3. Link the WhatsApp account.
+4. The service stores the complete Baileys authentication state (credentials and Signal keys) in MongoDB's `whatsapp_auth` collection.
+5. The linked WhatsApp account receives the value to set as `WHATSAPP_SESSION_ID` in the bot host's private environment settings.
 
-Those formats must not be assumed interchangeable. The session service must use the same pinned `prince-baileys` revision as the bot and persist the complete AuthenticationState (credentials plus Signal keys) to the same MongoDB database/collection.
+There is no compressed `creds.json` export. The session service and bot use the same pinned `prince-baileys` revision and MongoDB database format.
 
-## Target architecture
+## Environment variables
 
-- MongoDB collection: `whatsapp_auth`
-- Session namespace: `WHATSAPP_SESSION_ID`
-- Database: `MONGODB_DB`
-- Connection secret: `MONGODB_URI`
-- Auth format: the exact `prince-baileys` AuthenticationState used by HAYWHY MDX v5.
+Set these privately in your hosting provider:
 
-The service should expose QR and pairing-code flows while keeping credentials and Signal keys in MongoDB. It should not send raw auth exports or long-lived private keys through chats, logs, URLs, or public endpoints.
+- `MONGODB_URI` — MongoDB Atlas connection string.
+- `MONGODB_DB` — database name; defaults to `haywhy_mdx`.
+- `PORT` — optional web service port.
+- `LOG_LEVEL` — optional Pino log level.
+- `MAX_ACTIVE_SESSIONS` — optional concurrent setup limit.
 
-## Required environment variables
+The generated `WHATSAPP_SESSION_ID` is sent to the linked WhatsApp account after successful pairing. Put that exact value into the bot service's environment settings.
 
-| Variable | Purpose |
-|---|---|
-| `MONGODB_URI` | MongoDB Atlas connection string; configure as a secret |
-| `MONGODB_DB` | Database name, e.g. `haywhy_mdx` |
-| `WHATSAPP_SESSION_ID` | Stable session namespace for the account |
-| `PORT` | Optional web server port |
+## Endpoints
 
-## Safety rules
+- `GET /` — browser interface.
+- `GET /health` — service health.
+- `POST /api/pair` with JSON `{"number":"2348012345678"}` — start pairing.
+- `POST /api/qr` — start QR linking.
+- `GET /api/sessions/:id` — retrieve setup status.
 
-1. Never commit MongoDB credentials, QR codes, pairing codes, or WhatsApp auth state.
-2. Do not run the same session ID from the session service and bot at the same time.
-3. Do not delete the existing working session during migration.
-4. Do not mark this service production-ready until a fresh pair, MongoDB persistence, restart recovery, and message send/receive tests pass.
+## Safety
 
-## Migration checklist
+- Never commit MongoDB credentials or WhatsApp authentication data.
+- Keep the generated session ID private.
+- Run only one active WhatsApp socket per session ID.
+- The session service closes its temporary socket after successful linking; start the bot only after setup has completed.
+- Do not delete or replace an existing live bot session until the new one has passed restart and send/receive tests.
 
-- [ ] Copy the complete existing QR/pairing routes and UI into this repository.
-- [ ] Pin the exact same `prince-baileys` commit as the bot.
-- [ ] Replace compressed session-string export with MongoDB-backed auth-state persistence.
-- [ ] Verify the service and bot read the same session namespace.
-- [ ] Test QR and pairing code flows.
-- [ ] Verify restart recovery and message send/receive.
-- [ ] Ensure only one live socket owns a session ID.
+## Current validation status
 
-**Important:** The old repository is preserved. This repository documents the target architecture; its runtime migration and tests are still pending.
+The repository contains the initial MongoDB-backed implementation. It has not yet been run against a real MongoDB deployment or WhatsApp account. Confirm the pinned fork exports, clean Node 22 installation, QR/pairing behavior, persistence, and bot restart recovery before production use.
