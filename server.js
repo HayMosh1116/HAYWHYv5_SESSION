@@ -60,6 +60,13 @@ async function startSession(mode, phoneNumber) {
     message: 'Starting a secure WhatsApp connection.', socket: null, closed: false
   };
   sessions.set(sessionId, session);
+  session.timeout = setTimeout(async () => {
+    if (!session.closed) {
+      session.status = 'expired';
+      session.message = 'Setup expired. Start a new pairing or QR session.';
+      await closeSession(session);
+    }
+  }, 5 * 60 * 1000);
 
   try {
     const collection = await getWhatsAppAuthCollection();
@@ -166,6 +173,7 @@ async function closeSession(session) {
   session.closed = true;
   try { session.socket?.end(undefined); } catch (_) {}
   session.socket = null;
+  if (session.timeout) clearTimeout(session.timeout);
 }
 
 app.get('/health', (_req, res) => {
