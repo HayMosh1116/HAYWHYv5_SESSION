@@ -9,9 +9,10 @@ const {
   default: makeWASocket,
   Browsers,
   delay,
-  makeCacheableSignalKeyStore
+  makeCacheableSignalKeyStore,
+  jidNormalizedUser
 } = baileys;
-const { getWhatsAppAuthCollection, closeMongoClient } = require('./lib/mongo-client');
+const { getMongoClient, getWhatsAppAuthCollection, closeMongoClient } = require('./lib/mongo-client');
 const { useMongoAuthState } = require('./lib/mongo-auth-state');
 
 const app = express();
@@ -114,7 +115,7 @@ async function startSession(mode, phoneNumber) {
         try {
           await saveCreds();
           await delay(1200);
-          const ownJid = sock.user?.id;
+          const ownJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
           if (ownJid) {
             await sock.sendMessage(ownJid, {
               text: [
@@ -176,8 +177,23 @@ async function closeSession(session) {
   if (session.timeout) clearTimeout(session.timeout);
 }
 
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'HAYWHY MDX v5 session service' });
+app.get('/health', async (_req, res) => {
+  try {
+    const client = await getMongoClient();
+    const dbName = String(process.env.MONGODB_DB || 'haywhy_mdx').trim();
+    await client.db(dbName).command({ ping: 1 });
+    return res.status(200).json({
+      ok: true,
+      service: 'HAYWHY MDX v5 session service',
+      database: 'connected'
+    });
+  } catch (error) {
+    return res.status(503).json({
+      ok: false,
+      service: 'HAYWHY MDX v5 session service',
+      database: 'unavailable'
+    });
+  }
 });
 
 app.post('/api/pair', rateLimit, async (req, res) => {
