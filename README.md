@@ -27,7 +27,7 @@ The generated `WHATSAPP_SESSION_ID` is sent to the linked WhatsApp account after
 ## Endpoints
 
 - `GET /` — browser interface.
-- `GET /health` — service health.
+- `GET /health` — checks the web service and confirms MongoDB responds to a ping. Returns HTTP 200 when both are available, or HTTP 503 when MongoDB is unavailable.
 - `POST /api/pair` with JSON `{"number":"2348012345678"}` — start pairing.
 - `POST /api/qr` — start QR linking.
 - `GET /api/sessions/:id` — retrieve setup status.
@@ -42,4 +42,4 @@ The generated `WHATSAPP_SESSION_ID` is sent to the linked WhatsApp account after
 
 ## Current validation status
 
-The repository contains the initial MongoDB-backed implementation. It has not yet been run against a real MongoDB deployment or WhatsApp account. Confirm the pinned fork exports, clean Node 22 installation, QR/pairing behavior, persistence, and bot restart recovery before production use.
+GitHub Actions now runs a Node.js 22 syntax check and MongoDB auth-adapter unit tests on pushes and pull requests. The auth-adapter tests have also passed in an isolated local Node.js 22 test run. A clean dependency installation, live MongoDB test, real WhatsApp pairing, and bot restart recovery are still pending.
