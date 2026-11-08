@@ -261,7 +261,7 @@ async function copyPairingCode(code,button){
 }
 function show(d){
   const code=d.pairingCode||'';
-  result.textContent=(d.message||d.status||'')+(code?'\n\nPAIRING CODE: '+code:'');
+  result.textContent=(d.message||d.status||'')+(code?'\\n\\nPAIRING CODE: '+code:'');
   const oldCopy=document.getElementById('copy');if(oldCopy)oldCopy.remove();
   if(code){
     const copy=document.createElement('button');copy.id='copy';copy.type='button';copy.textContent='Copy pairing code';
