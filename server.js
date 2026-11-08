@@ -20,7 +20,8 @@ const PORT = Number(process.env.PORT || 5000);
 const sessions = new Map();
 const logger = pino({ level: process.env.LOG_LEVEL || 'silent' });
 const MAX_ACTIVE_SESSIONS = Number(process.env.MAX_ACTIVE_SESSIONS || 5);
-const REQUEST_WINDOW_MS = 10 * 60 * 1000;
+const REQUEST_WINDOW_MS = 2 * 60 * 1000;
+const MAX_REQUESTS_PER_WINDOW = 10;
 const requestsByIp = new Map();
 
 app.disable('x-powered-by');
@@ -30,7 +31,7 @@ function rateLimit(req, res, next) {
   const now = Date.now();
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
   const previous = requestsByIp.get(ip);
-  if (previous && now - previous.startedAt < REQUEST_WINDOW_MS && previous.count >= 5) {
+  if (previous && now - previous.startedAt < REQUEST_WINDOW_MS && previous.count >= MAX_REQUESTS_PER_WINDOW) {
     return res.status(429).json({ error: 'Too many pairing attempts. Try again in 10 minutes.' });
   }
   if (!previous || now - previous.startedAt >= REQUEST_WINDOW_MS) requestsByIp.set(ip, { startedAt: now, count: 1 });
@@ -44,7 +45,7 @@ function publicStatus(session) {
     status: session.status,
     mode: session.mode,
     qr: session.status === 'waiting_qr' ? session.qr : undefined,
-    pairingCode: session.status === 'waiting_pairing' ? session.pairingCode : undefined,
+    pairingCode: session.pairingCode || undefined,
     message: session.message
   };
 }
@@ -235,7 +236,7 @@ input,button{width:100%;box-sizing:border-box;padding:14px;border-radius:10px;bo
 input{background:#090909;color:white}button{margin-top:12px;background:#7b4acb;color:white;border:0;font-weight:bold}
 #result{margin-top:18px;overflow-wrap:anywhere}#qr{display:block;width:min(100%,280px);margin:16px auto;background:white;padding:8px;border-radius:12px}
 code{color:#c8a7ff}
-</style></head><body><main><h1>HAYWHY MDX v5</h1><p>Generate a WhatsApp link. Your full authentication data is saved directly to MongoDB; no session export is sent.</p>
+</style></head><body><main><h1>HAYWHY MDX v5</h1>
 <label for="number">WhatsApp number with country code</label><input id="number" inputmode="numeric" placeholder="2348012345678">
 <button id="pair">Get pairing code</button><button id="qrbtn">Use QR code</button><div id="result" aria-live="polite"></div><img id="qr" hidden alt="WhatsApp QR code">
 <script>
@@ -244,7 +245,7 @@ let poller;
 async function begin(path,body){clearInterval(poller);result.textContent='Starting secure connection…';qr.hidden=true;
 try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not start');show(d);if(d.sessionId)poller=setInterval(async()=>{try{const x=await fetch('/api/sessions/'+encodeURIComponent(d.sessionId));if(!x.ok)return;show(await x.json())}catch(e){}},2000)}
 catch(e){result.textContent=e.message}}
-function show(d){result.textContent=d.message||d.status;if(d.pairingCode)result.textContent+=' Pairing code: '+d.pairingCode;if(d.qr){qr.src=d.qr;qr.hidden=false}}
+function show(d){const code=d.pairingCode?'\\n\\nPAIRING CODE: '+d.pairingCode:'';result.textContent=(d.message||d.status||'')+code;if(d.qr){qr.src=d.qr;qr.hidden=false}}
 document.getElementById('pair').onclick=()=>begin('/api/pair',{number:document.getElementById('number').value});
 document.getElementById('qrbtn').onclick=()=>begin('/api/qr',{});
 </script></main></body></html>`);
